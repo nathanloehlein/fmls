@@ -3,12 +3,13 @@ $playerRounds = @()
 $playersOutFile = "Players.csv"
 $playerRoundFile = "playerbyRound.csv"
 
-$excludes = @("13356","248938", "426797", "224651", "227656", "248397", "234177", "424258", "445236", "234410", "471798", "427386") 
+$excludes = @(13356,248938,426797,224651, 227656, 248397, 234177, 424258, 445236, 234410, 471798, 427386) 
 
 $URL = "https://fgp-data-us.s3.amazonaws.com/json/mls_mls/players.json"
 $playerURL = "https://fgp-data-us.s3.amazonaws.com/json/mls_mls/stats/players/{0}.json"
 $squadURL = "https://fgp-data-us.s3.amazonaws.com/json/mls_mls/squads.json"
 $roundURL = "https://fgp-data-us.s3.amazonaws.com/json/mls_mls/rounds.json"
+$schedule = @{}
 
 $squadResponse = Invoke-WebRequest $squadURL
 if($squadResponse.StatusCode -eq 200)
@@ -20,6 +21,42 @@ $roundsResponse = Invoke-WebRequest $roundURL
 if($roundsResponse.StatusCode -eq 200)
 {
     $rounds = $roundsResponse.Content | ConvertFrom-Json
+}
+
+foreach( $round in $rounds)
+{
+    foreach($squad in $squads)
+    {
+        $matches = @($round.matches | Where-Object { $_.home_squad_id -EQ $squad.id -OR $_.away_squad_id -EQ  $squad.id })
+
+        if($matches.Count -eq 1) {
+            #SGW
+            if($schedule.ContainsKey($round.id))
+            {
+                $schedule[$round.id].Add($squad.id,"SGW")
+            }else {
+                $schedule[$round.id]=@{$squad.id="SGW"}
+            }
+        }
+        elseif($matches.Count -gt 1) {
+            #DGW
+            if($schedule.ContainsKey($round.id))
+            {
+                $schedule[$round.id].Add($squad.id,"DGW")
+            }else {
+                $schedule[$round.id]=@{$squad.id="DGW"}
+            }
+        }
+        else {
+            #BYE
+            if($schedule.ContainsKey($round.id))
+            {
+                $schedule[$round.id].Add($squad.id,"BYE")
+            }else {
+                $schedule[$round.id]=@{$squad.id="BYE"}
+            }
+        }
+    }
 }
 
 $response = Invoke-WebRequest $URL
@@ -86,6 +123,7 @@ if($response.StatusCode -eq 200)
                             "last_name" = $player.last_name;
                             "Round" = $roundNumber;
                             "price" = $player.stats.prices.($roundNumber);
+                            "week_type" = $schedule[$roundNumber][$player.squad_id];
                             "match_id" = $playerMatch.match_id;
                             "match_score" = $player.stats.match_scores.($playerMatch.match_id);
                             "squad" = ($squads | where-object id -eq $player.squad_id).short_name;
@@ -122,6 +160,9 @@ if($response.StatusCode -eq 200)
                     }
                 }
             }
+        }
+        else {
+            Write-Host ("skipped {0} {1} {2}" -f $player.id, $player.first_name, $player.last_name) -ForegroundColor DarkYellow
         }
     }
 }
